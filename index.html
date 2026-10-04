@@ -135,7 +135,7 @@ aside .tip{font-size:.8rem;color:var(--muted);margin:14px 10px 0;line-height:1.4
 <body>
 <header><div class="hin">
   <div class="k">Rental application</div>
-  <h1 id="hTitle">Loading…</h1>
+  <h1 id="hTitle">Loadingâ€¦</h1>
   <div class="sub" id="hSub"></div>
   <div id="hProg" class="hidden"><div class="progress"><i id="bar" style="width:0"></i></div><div class="steplabel"><span id="stepName"></span><span id="stepNum"></span></div></div>
 </div></header>
@@ -170,17 +170,17 @@ function api(action,body){
   // text/plain keeps this a "simple" request, so no CORS preflight is needed
   return fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'})
     .then(function(r){ if(!r.ok) throw new Error('net'); return r.json(); })
-    .catch(function(e){ if(e&&e.message==='net'||e instanceof TypeError) throw new Error('We couldn’t reach the server. Check your connection and try again — your answers are kept on this device.'); throw e; });
+    .catch(function(e){ if(e&&e.message==='net'||e instanceof TypeError) throw new Error('We couldnâ€™t reach the server. Check your connection and try again â€” your answers are kept on this device.'); throw e; });
 }
 
 /* ---------- Boot ---------- */
 function fatal(title,msg,icon){
   $('#side').classList.add('hidden');
   $('#hTitle').textContent=title; $('#hSub').textContent=''; $('#hProg').classList.add('hidden'); $('#foot').classList.add('hidden');
-  $('#main').innerHTML='<div class="card center"><div class="big">'+(icon||'🔒')+'</div><h2 style="margin-top:10px">'+esc(title)+'</h2><p class="intro">'+esc(msg)+'</p></div>';
+  $('#main').innerHTML='<div class="card center"><div class="big">'+(icon||'ðŸ”’')+'</div><h2 style="margin-top:10px">'+esc(title)+'</h2><p class="intro">'+esc(msg)+'</p></div>';
 }
 if(!token){ fatal('Link needed','Please open this page using the link in your application email.'); return; }
-if(/PASTE_YOUR/.test(API_URL)){ fatal('Not set up yet','The form isn’t connected yet. Please contact us for help.','🛠'); return; }
+if(/PASTE_YOUR/.test(API_URL)){ fatal('Not set up yet','The form isnâ€™t connected yet. Please contact us for help.','ðŸ› '); return; }
 
 api('load').then(function(r){
   if(!r.ok){ fatal(r.code==='expired'?'Link expired':'Link not valid', r.error||'Please contact us for a new link.'); return; }
@@ -190,7 +190,7 @@ api('load').then(function(r){
   S.steps=[{id:'welcome',title:'Welcome'}].concat(r.form).concat([{id:'sign',title:'Agree and sign'},{id:'review',title:'Check and submit'}]);
   try{ var st=+sessionStorage.getItem(LS+'-step'); if(st>0&&st<S.steps.length) S.step=st; S.maxStep=Math.min(S.steps.length-1,+localStorage.getItem(LS+'-max')||0); }catch(e){}
   render();
-}).catch(function(e){ fatal('Can’t load the form', e.message, '📶'); });
+}).catch(function(e){ fatal('Canâ€™t load the form', e.message, 'ðŸ“¶'); });
 
 /* ---------- Rules (mirrors the server) ---------- */
 function visible(f){ if(!f.if) return true; var v=String(S.answers[f.if[0]]||'').trim(); return f.if[1]==='*'? !!v : v===f.if[1]; }
@@ -218,7 +218,7 @@ function check(step){
 function setHeader(){
   var p=S.data.property, st=S.steps[S.step];
   $('#hTitle').textContent=p.address1||'Rental application';
-  $('#hSub').textContent=[p.address2, p.rent!==''&&p.rent!=null? money(p.rent)+' per week':''].filter(Boolean).join(' · ');
+  $('#hSub').textContent=[p.address2, p.rent!==''&&p.rent!=null? money(p.rent)+' per week':''].filter(Boolean).join(' Â· ');
   $('#hProg').classList.remove('hidden');
   $('#bar').style.width=Math.round(S.step/(S.steps.length-1)*100)+'%';
   $('#stepName').textContent=st.title; $('#stepNum').textContent='Step '+(S.step+1)+' of '+S.steps.length;
@@ -245,18 +245,18 @@ function stepCard(st){ return '<div class="card"><h2>'+esc(st.title)+'</h2>'+(st
 /* Step list beside the form on wider screens; finished steps can be revisited */
 function sideHtml(){
   return '<ol>'+S.steps.map(function(st,i){ var cls=i===S.step?'cur':i<=S.maxStep?'done':'';
-    return '<li class="'+cls+'"><button type="button"'+(cls==='done'?' data-edit="'+i+'"':' tabindex="-1"')+'><span class="n">'+(i<S.maxStep&&i!==S.step?'✓':(i+1))+'</span>'+esc(st.title)+'</button></li>'; }).join('')+'</ol>'+
+    return '<li class="'+cls+'"><button type="button"'+(cls==='done'?' data-edit="'+i+'"':' tabindex="-1"')+'><span class="n">'+(i<S.maxStep&&i!==S.step?'âœ“':(i+1))+'</span>'+esc(st.title)+'</button></li>'; }).join('')+'</ol>'+
     '<div class="tip">Your answers save as you go. You can close this page and come back to your link any time.</div>';
 }
 function welcomeHtml(){
   var p=S.data.property;
-  return '<div class="card"><h2>Hi '+esc(String(S.answers.ApplicantName||'').split(' ')[0]||'there')+' 👋</h2>'+
-    '<p class="intro">Thanks for applying. This takes about 10–15 minutes. Your answers save as you go, so you can stop and come back to this link any time.</p>'+
+  return '<div class="card"><h2>Hi '+esc(String(S.answers.ApplicantName||'').split(' ')[0]||'there')+' ðŸ‘‹</h2>'+
+    '<p class="intro">Thanks for applying. This takes about 10â€“15 minutes. Your answers save as you go, so you can stop and come back to this link any time.</p>'+
     '<dl class="prop"><dt>Property</dt><dd>'+esc([p.address1,p.address2].filter(Boolean).join(', '))+'</dd>'+
     (p.rent!==''&&p.rent!=null?'<dt>Rent</dt><dd>'+esc(money(p.rent))+' per week</dd>':'')+(p.tenancy?'<dt>Tenancy</dt><dd>'+esc(p.tenancy)+'</dd>':'')+
     (p.moveIn?'<dt>Available</dt><dd>'+esc(nzDate(p.moveIn))+'</dd>':'')+'</dl></div>'+
-    '<div class="card"><h2 style="font-size:1.05rem">Have these ready</h2><p class="intro" style="margin:0">Your driver licence or passport (you can take a photo of it), your current and previous landlord’s contact details, and if possible your last 3 payslips or a bank statement and your tenancy agreement.</p></div>'+
-    '<div class="card"><p class="intro" style="margin:0">🔒 Your information is sent securely and is only seen by the landlord. One application is needed from every adult who will be on the tenancy.</p></div>';
+    '<div class="card"><h2 style="font-size:1.05rem">Have these ready</h2><p class="intro" style="margin:0">Your driver licence or passport (you can take a photo of it), your current and previous landlordâ€™s contact details, and if possible your last 3 payslips or a bank statement and your tenancy agreement.</p></div>'+
+    '<div class="card"><p class="intro" style="margin:0">ðŸ”’ Your information is sent securely and is only seen by the landlord. One application is needed from every adult who will be on the tenancy.</p></div>';
 }
 function fieldsHtml(fields){
   var h='', lastGroup='';
@@ -272,8 +272,8 @@ function fieldsHtml(fields){
       h+='<div class="lbl" id="l_'+f.k+'">'+lab+'</div><div class="opts" role="radiogroup" aria-labelledby="l_'+f.k+'">'+opts.map(function(o){ return '<button type="button" role="radio" aria-checked="'+(v===o)+'" data-opt="'+esc(o)+'" data-k="'+f.k+'" class="'+(v===o?'on':'')+'">'+esc(o)+'</button>'; }).join('')+'</div>';
     } else if(f.t==='upload'){
       var list=S.uploads[f.k]||[];
-      h+='<div class="lbl">'+lab+'</div><div class="upl" id="u_'+f.k+'">'+list.map(function(x){ return '<div class="file">📎 <span>'+esc(x.name)+'</span><button type="button" data-rm="'+esc(x.id)+'" data-k="'+f.k+'">Remove</button></div>'; }).join('')+
-        '<label class="btn ghost block" style="cursor:pointer">📷 '+(list.length?'Add another':'Take a photo or choose a file')+'<input type="file" class="sr" data-up="'+f.k+'" accept="image/*,application/pdf" multiple></label><div class="hint" data-prog="'+f.k+'"></div></div>';
+      h+='<div class="lbl">'+lab+'</div><div class="upl" id="u_'+f.k+'">'+list.map(function(x){ return '<div class="file">ðŸ“Ž <span>'+esc(x.name)+'</span><button type="button" data-rm="'+esc(x.id)+'" data-k="'+f.k+'">Remove</button></div>'; }).join('')+
+        '<label class="btn ghost block" style="cursor:pointer">ðŸ“· '+(list.length?'Add another':'Take a photo or choose a file')+'<input type="file" class="sr" data-up="'+f.k+'" accept="image/*,application/pdf" multiple></label><div class="hint" data-prog="'+f.k+'"></div></div>';
     } else if(f.t==='textarea'){
       h+='<label for="'+id+'">'+lab+'</label><textarea id="'+id+'" data-k="'+f.k+'" maxlength="2000">'+esc(v)+'</textarea>';
     } else {
@@ -310,7 +310,7 @@ function reviewHtml(){
       rows+='<dt>'+esc(f.l)+'</dt><dd'+(errs[f.k]?' class="missing"':'')+'>'+esc(t||errs[f.k])+'</dd>'; });
     h+='<div class="card rev"><h3>'+esc(st.title)+'<button type="button" data-edit="'+i+'">Edit</button></h3>'+(rows?'<dl>'+rows+'</dl>':'<div class="hint">Nothing entered</div>')+'</div>';
   });
-  h+='<div class="card rev"><h3>Agree and sign<button type="button" data-edit="'+(S.steps.length-2)+'">Edit</button></h3><div class="hint">'+(S.sigDrawn?'✓ Signed by '+esc(S.signedName):'<span class="missing">Not signed yet</span>')+'</div></div>';
+  h+='<div class="card rev"><h3>Agree and sign<button type="button" data-edit="'+(S.steps.length-2)+'">Edit</button></h3><div class="hint">'+(S.sigDrawn?'âœ“ Signed by '+esc(S.signedName):'<span class="missing">Not signed yet</span>')+'</div></div>';
   if(S.submitError) h='<div class="banner">'+esc(S.submitError)+'</div>'+h;
   return h;
 }
@@ -335,9 +335,9 @@ function keepLocal(){ try{ localStorage.setItem(LS,JSON.stringify({answers:S.ans
 function changed(){ keepLocal(); S.dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,1500); }
 function saveNow(){
   if(!S.dirty||S.saving) return Promise.resolve();
-  S.saving=true; S.dirty=false; $('#saved').textContent='Saving…';
-  return api('save',{answers:S.answers}).then(function(r){ S.saving=false; $('#saved').textContent=r.ok?'✓ Saved':(r.error||'Not saved'); },
-    function(){ S.saving=false; S.dirty=true; $('#saved').textContent='Offline — your answers are kept on this device and will save when you’re back online'; });
+  S.saving=true; S.dirty=false; $('#saved').textContent='Savingâ€¦';
+  return api('save',{answers:S.answers}).then(function(r){ S.saving=false; $('#saved').textContent=r.ok?'âœ“ Saved':(r.error||'Not saved'); },
+    function(){ S.saving=false; S.dirty=true; $('#saved').textContent='Offline â€” your answers are kept on this device and will save when youâ€™re back online'; });
 }
 window.addEventListener('online',function(){ if(S.dirty) saveNow(); });
 document.addEventListener('visibilitychange',function(){ if(document.hidden) saveNow(); });
@@ -362,7 +362,7 @@ function uploadFiles(key,files){
   var prog=document.querySelector('[data-prog="'+key+'"]'), i=0, msgs=[];
   function next(){
     if(i>=files.length){ render(); if(msgs.length) setTimeout(function(){ var p=document.querySelector('[data-prog="'+key+'"]'); if(p){ p.textContent=msgs.join(' '); p.style.color='var(--bad)'; } },0); return; }
-    var f=files[i++]; if(prog) prog.textContent='Uploading '+f.name+'…';
+    var f=files[i++]; if(prog) prog.textContent='Uploading '+f.name+'â€¦';
     shrink(f).then(function(b){
       if(b.size>MAX_BYTES){ msgs.push(f.name+' is too large (over 8 MB).'); return next(); }
       var type=b.type||(/\.pdf$/i.test(f.name)?'application/pdf':'image/jpeg');
@@ -414,7 +414,7 @@ document.addEventListener('click',function(e){
 function submit(btn){
   // find the first step with a problem
   for(var i=0;i<S.steps.length;i++){ var errs=S.steps[i].fields||S.steps[i].id==='sign'? check(S.steps[i]) : {}; if(Object.keys(errs).length){ S.errors=errs; S.step=i; render(); var f=document.querySelector('.err'); if(f) f.scrollIntoView({block:'center'}); return; } }
-  btn.disabled=true; btn.innerHTML='<span class="spin" style="width:20px;height:20px;border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> Submitting…';
+  btn.disabled=true; btn.innerHTML='<span class="spin" style="width:20px;height:20px;border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> Submittingâ€¦';
   flattenSig(S.sigImage).then(function(sig){
     return api('submit',{answers:S.answers,consents:S.consents,signedName:S.signedName,signature:sig,userAgent:navigator.userAgent,tz:(Intl.DateTimeFormat().resolvedOptions().timeZone||'')});
   }).then(function(r){
@@ -442,9 +442,9 @@ function done(r,already){
   $('#hProg').classList.add('hidden'); $('#foot').classList.add('hidden');
   $('#hTitle').textContent=(r.property&&r.property.address1)||(S.data&&S.data.property.address1)||'Rental application';
   $('#hSub').textContent='Application '+(already?'already ':'')+'submitted';
-  $('#main').innerHTML='<div class="card center"><div class="big">✅</div><h2 style="margin-top:10px">Thank you'+(S.answers.ApplicantName?', '+esc(String(S.answers.ApplicantName).split(' ')[0]):'')+'!</h2>'+
+  $('#main').innerHTML='<div class="card center"><div class="big">âœ…</div><h2 style="margin-top:10px">Thank you'+(S.answers.ApplicantName?', '+esc(String(S.answers.ApplicantName).split(' ')[0]):'')+'!</h2>'+
     '<p class="intro">Your application '+(already?'has already been':'has been')+' received'+(r.submittedAt?' on '+esc(new Date(r.submittedAt).toLocaleString('en-NZ',{day:'numeric',month:'long',hour:'numeric',minute:'2-digit'})):'')+'. A copy has been emailed to you.</p>'+
-    '<p class="intro" style="margin:0">We’ll be in touch once we’ve considered all the applications.</p></div>';
+    '<p class="intro" style="margin:0">Weâ€™ll be in touch once weâ€™ve considered all the applications.</p></div>';
 }
 })();
 </script>

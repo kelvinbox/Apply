@@ -155,7 +155,7 @@ footer{transition:transform .18s ease,visibility .18s}
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.1.3';
+var PAGE_VERSION = '1.1.4';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -168,11 +168,14 @@ var S={ data:null, answers:{}, uploads:{}, consents:{}, step:0, steps:[], errors
 var LS='apply-'+token;
 
 /* ---------- API ---------- */
-function api(action,body){
+function api(action,body,timeoutMs){
   body=body||{}; body.action=action; body.token=token;
+  var ctl=window.AbortController? new AbortController() : null, timer=null;
+  if(ctl && timeoutMs) timer=setTimeout(function(){ ctl.abort(); },timeoutMs);
   // text/plain keeps this a "simple" request, so no CORS preflight is needed
-  return fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'})
-    .then(function(r){ if(!r.ok) throw new Error('net'); return r.json(); })
+  return fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow',signal:ctl?ctl.signal:undefined})
+    .then(function(r){ clearTimeout(timer); if(!r.ok) throw new Error('net'); return r.json(); },function(e){ clearTimeout(timer);
+      if(e && e.name==='AbortError') throw new Error('That upload took too long. Check your connection and try again.'); throw e; })
     .catch(function(e){ if(e&&e.message==='net'||e instanceof TypeError) throw new Error('We couldn\u2019t reach the server. Check your connection and try again \u2014 your answers are kept on this device.'); throw e; });
 }
 
@@ -346,18 +349,53 @@ window.addEventListener('online',function(){ if(S.dirty) saveNow(); });
 document.addEventListener('visibilitychange',function(){ if(document.hidden) saveNow(); });
 
 /* ---------- Uploads ---------- */
+/* ---------- Preparing photos ----------
+   Library photos on iPhone are often HEIC and can be very large (up to 48 megapixels). Decode them
+   with createImageBitmap where available, fall back to <img>, and never wait forever: if a photo
+   can't be shrunk on the phone, the original is sent instead when it's small enough. */
+function withTimeout(p,ms,msg){ return new Promise(function(res,rej){ var t=setTimeout(function(){ rej(new Error(msg||'timeout')); },ms); p.then(function(v){ clearTimeout(t); res(v); },function(e){ clearTimeout(t); rej(e); }); }); }
+function isImage(file){ return /^image\//i.test(file.type) || /\.(jpe?g|png|heic|heif|webp)$/i.test(file.name||''); }
+function decodeImage(file){
+  function viaImg(){
+    return new Promise(function(res,rej){
+      var url=URL.createObjectURL(file), img=new Image();
+      img.onload=function(){ res({src:img,w:img.naturalWidth,h:img.naturalHeight,done:function(){ URL.revokeObjectURL(url); }}); };
+      img.onerror=function(){ URL.revokeObjectURL(url); rej(new Error('decode')); };
+      img.src=url;
+    });
+  }
+  var first=window.createImageBitmap? createImageBitmap(file).then(function(b){ return {src:b,w:b.width,h:b.height,done:function(){ if(b.close) b.close(); }}; }) : Promise.reject();
+  return withTimeout(first.catch(viaImg),25000,'decode');
+}
+function canvasToJpeg(c){
+  return withTimeout(new Promise(function(res,rej){
+    if(c.toBlob) c.toBlob(function(b){ b? res(b) : rej(new Error('encode')); },'image/jpeg',0.82);
+    else rej(new Error('encode'));
+  }),20000,'encode').catch(function(){
+    var d=c.toDataURL('image/jpeg',0.82), bin=atob(d.split(',')[1]), a=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i);
+    return new Blob([a],{type:'image/jpeg'});
+  });
+}
+function originalType(file){
+  if(file.type) return file.type;
+  var m=/\.(\w+)$/.exec(file.name||''), e=m?m[1].toLowerCase():'';
+  return {pdf:'application/pdf',png:'image/png',heic:'image/heic',heif:'image/heif',webp:'image/webp'}[e]||'image/jpeg';
+}
 function shrink(file){
-  return new Promise(function(res){
-    if(!/^image\//.test(file.type) || /gif/.test(file.type)){ res(file); return; }
-    var url=URL.createObjectURL(file), img=new Image();
-    img.onload=function(){
-      var s=Math.min(1,MAX_EDGE/Math.max(img.width,img.height)), c=document.createElement('canvas');
-      c.width=Math.round(img.width*s); c.height=Math.round(img.height*s); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      URL.revokeObjectURL(url);
-      c.toBlob(function(b){ res(b? new File([b],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'}) : file); },'image/jpeg',0.82);
-    };
-    img.onerror=function(){ URL.revokeObjectURL(url); res(file); };
-    img.src=url;
+  if(!isImage(file) || /gif/i.test(file.type)) return Promise.resolve(file);
+  return decodeImage(file).then(function(im){
+    var s=Math.min(1,MAX_EDGE/Math.max(im.w,im.h)), c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(im.w*s)); c.height=Math.max(1,Math.round(im.h*s));
+    c.getContext('2d').drawImage(im.src,0,0,c.width,c.height); im.done();
+    return canvasToJpeg(c).then(function(b){
+      // keep the original if it was already a small JPEG
+      if(/jpe?g/i.test(file.type) && file.size<=b.size && file.size<=MAX_BYTES) return file;
+      return new File([b],(file.name||'photo').replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'});
+    });
+  }).catch(function(){
+    if(file.size<=MAX_BYTES) return file;          // send the original instead
+    throw new Error((file.name||'That photo')+' is too large to send from your photo library. Try taking a new photo of the document instead, or choose a screenshot of it.');
   });
 }
 function toB64(blob){ return new Promise(function(res,rej){ var r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]); }; r.onerror=rej; r.readAsDataURL(blob); }); }
@@ -389,11 +427,15 @@ function uploadFiles(key,files){
       S.uploading=Math.max(0,S.uploading-1); redrawUpload(key,msgs.join(' ')); navBusy(); keepLocal(); return;
     }
     var f=files[i++];
-    prog('Uploading '+(files.length>1?i+' of '+files.length+': ':'')+f.name+'\u2026');
+    var label=(files.length>1?i+' of '+files.length+': ':'')+(f.name||'photo');
+    if(isImage(f)) prog('Preparing '+label+'\u2026');
     shrink(f).then(function(b){
-      if(b.size>MAX_BYTES){ msgs.push(f.name+' is too large (over 8 MB).'); return next(); }
-      var type=b.type||(/\.pdf$/i.test(f.name)?'application/pdf':'image/jpeg');
-      return toB64(b).then(function(d){ return api('upload',{item:key,name:f.name,mime:type,data:d}); }).then(function(r){
+      if(b.size>MAX_BYTES){ msgs.push((f.name||'That file')+' is too large (over 8 MB).'); return next(); }
+      var type=originalType(b);
+      prog('Uploading '+label+'\u2026');
+      // allow plenty of time on slow mobile data, but never wait forever
+      var limit=Math.max(60000, Math.round(b.size/1024)*120);
+      return toB64(b).then(function(d){ return api('upload',{item:key,name:f.name||'photo.jpg',mime:type,data:d},limit); }).then(function(r){
         if(r.ok){ S.uploads=r.uploads; delete S.errors[key]; } else msgs.push(r.error); next();
       });
     }).catch(function(e){ msgs.push(e.message||'Upload failed.'); next(); });

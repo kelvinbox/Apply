@@ -164,7 +164,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.1.8';
+var PAGE_VERSION = '1.1.9';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -207,7 +207,12 @@ var loadTimers=loadMsgs.map(function(m){ return setTimeout(function(){ var el=$(
 $('#main').innerHTML='<div class="card center"><span class="spin"></span><p class="intro" id="loadMsg" style="margin:12px 0 0">Opening your application\u2026</p></div>';
 function loadForm(attempt){
   var limits=[9000,15000,30000];
-  return api('load',{},limits[Math.min(attempt,limits.length-1)]).catch(function(e){
+  return api('load',{},limits[Math.min(attempt,limits.length-1)]).then(function(r){
+    // a usable answer is an error message, "already submitted", or the full form; anything else
+    // (e.g. Google answering a waking-up request with the service's status reply) is retried
+    if(r && (r.ok===false || r.submitted || (r.form && r.form.length && r.property))) return r;
+    throw new Error('incomplete');
+  }).catch(function(e){
     if(attempt<2){ return new Promise(function(res){ setTimeout(res,attempt?1500:300); }).then(function(){ return loadForm(attempt+1); }); }
     throw new Error('We couldn\u2019t open your application just now. Please check your connection and tap Try again.');
   });
@@ -251,7 +256,7 @@ function check(step){
 
 /* ---------- Rendering ---------- */
 function setHeader(){
-  var p=S.data.property, st=S.steps[S.step];
+  var p=S.data.property||{}, st=S.steps[S.step];
   $('#hTitle').textContent=p.address1||'Rental application';
   $('#hSub').textContent=[p.address2, p.rent!==''&&p.rent!=null? money(p.rent)+' per week':''].filter(Boolean).join(' \u00B7 ');
   $('#hProg').classList.remove('hidden');
@@ -284,7 +289,7 @@ function sideHtml(){
     '<div class="tip">Your answers save as you go. You can close this page and come back to your link any time.</div>';
 }
 function welcomeHtml(){
-  var p=S.data.property;
+  var p=S.data.property||{};
   return '<div class="card"><h2>Hi '+esc(String(S.answers.ApplicantName||'').split(' ')[0]||'there')+' \uD83D\uDC4B</h2>'+
     '<p class="intro">Thanks for applying. This takes about 10\u201315 minutes. Your answers save as you go, so you can stop and come back to this link any time.</p>'+
     '<dl class="prop"><dt>Property</dt><dd>'+esc([p.address1,p.address2].filter(Boolean).join(', '))+'</dd>'+
@@ -607,7 +612,7 @@ function done(r,already){
   $('#side').classList.add('hidden');
   try{ localStorage.removeItem(LS+'-max'); }catch(e){}
   $('#hProg').classList.add('hidden'); $('#foot').classList.add('hidden');
-  $('#hTitle').textContent=(r.property&&r.property.address1)||(S.data&&S.data.property.address1)||'Rental application';
+  $('#hTitle').textContent=(r.property&&r.property.address1)||(S.data&&S.data.property&&S.data.property.address1)||'Rental application';
   $('#hSub').textContent='Application '+(already?'already ':'')+'submitted';
   $('#main').innerHTML='<div class="card center"><div class="big">\u2705</div><h2 style="margin-top:10px">Thank you'+(S.answers.ApplicantName?', '+esc(String(S.answers.ApplicantName).split(' ')[0]):'')+'!</h2>'+
     '<p class="intro">Your application '+(already?'has already been':'has been')+' received'+(r.submittedAt?' on '+esc(new Date(r.submittedAt).toLocaleString('en-NZ',{day:'numeric',month:'long',hour:'numeric',minute:'2-digit'})):'')+'. A copy has been emailed to you.</p>'+

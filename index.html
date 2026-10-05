@@ -164,7 +164,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.1.9';
+var PAGE_VERSION = '1.2.1';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -244,6 +244,7 @@ function check(step){
     if(f.t==='email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) errs[f.k]='Check this email address';
     if(f.t==='tel' && v.replace(/\D/g,'').length<7) errs[f.k]='Check this phone number';
     if((f.t==='money'||f.t==='number') && !isFinite(Number(v.replace(/[$,\s]/g,'')))) errs[f.k]='Enter a number';
+    if(f.t==='date' && f.minAge){ var age=ageOn(v); if(age===null||age>120) errs[f.k]='Check this date'; else if(age<f.minAge) errs[f.k]='You must be '+f.minAge+' or older to apply'; }
   });
   if(step.rule==='licenceOrPassport' && !String(S.answers.LicenceNumber||'').trim() && !String(S.answers.PassportNumber||'').trim()) errs.LicenceNumber='Give your driver licence number or your passport number';
   if(step.id==='sign'){
@@ -253,6 +254,15 @@ function check(step){
   }
   return errs;
 }
+
+/* Whole years from a yyyy-mm-dd birth date to today; null if it isn't a real date or is in the future */
+function ageOn(ymd){
+  var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd||'')); if(!m) return null;
+  var y=+m[1], mo=+m[2], d=+m[3], b=new Date(y,mo-1,d), t=new Date();
+  if(b.getFullYear()!==y||b.getMonth()!==mo-1||b.getDate()!==d||b>t) return null;
+  var age=t.getFullYear()-y; if(t.getMonth()+1<mo||(t.getMonth()+1===mo&&t.getDate()<d)) age--; return age;
+}
+function isoYearsAgo(n){ var t=new Date(); t.setFullYear(t.getFullYear()-n); return t.getFullYear()+'-'+('0'+(t.getMonth()+1)).slice(-2)+'-'+('0'+t.getDate()).slice(-2); }
 
 /* ---------- Rendering ---------- */
 function setHeader(){
@@ -318,7 +328,7 @@ function fieldsHtml(fields){
       h+='<label for="'+id+'">'+lab+'</label><textarea id="'+id+'" data-k="'+f.k+'" maxlength="2000">'+esc(v)+'</textarea>';
     } else {
       var type={email:'email',tel:'tel',date:'date'}[f.t]||'text', im={tel:'tel',money:'decimal',number:'numeric',email:'email'}[f.t]||'';
-      var input='<input id="'+id+'" type="'+type+'" data-k="'+f.k+'" value="'+esc(v)+'"'+(im?' inputmode="'+im+'"':'')+(f.ac?' autocomplete="'+f.ac+'"':' autocomplete="off"')+(f.ph?' placeholder="'+esc(f.ph)+'"':'')+(f.t==='text'?' autocapitalize="words"':'')+' enterkeyhint="next" maxlength="300">';
+      var input='<input id="'+id+'" type="'+type+'" data-k="'+f.k+'" value="'+esc(v)+'"'+(im?' inputmode="'+im+'"':'')+(f.ac?' autocomplete="'+f.ac+'"':' autocomplete="off"')+(f.ph?' placeholder="'+esc(f.ph)+'"':'')+(f.t==='text'?' autocapitalize="words"':'')+(f.t==='date'&&f.minAge?' max="'+isoYearsAgo(f.minAge)+'" min="'+isoYearsAgo(120)+'"':'')+' enterkeyhint="next" maxlength="300">';
       h+='<label for="'+id+'">'+lab+'</label>'+(f.t==='money'?'<div class="money"><span>$</span>'+input+'</div>':input);
     }
     if(f.hint) h+='<div class="hint">'+esc(f.hint)+'</div>';
@@ -372,7 +382,9 @@ function initSig(){
 /* ---------- Saving ---------- */
 var saveTimer=null;
 function keepLocal(){ try{ localStorage.setItem(LS,JSON.stringify({answers:S.answers,consents:S.consents,signedName:S.signedName})); }catch(e){} }
-function changed(){ keepLocal(); S.dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,1500); }
+/* Answers are kept on the phone instantly; the server copy is saved after a 4.5-second pause in typing, and always
+   when moving between steps or leaving the page - fewer requests, and less competition with uploads */
+function changed(){ keepLocal(); S.dirty=true; clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,4500); }
 function saveNow(){
   if(!S.dirty||S.saving) return Promise.resolve();
   S.saving=true; S.dirty=false; $('#saved').textContent='Saving\u2026';

@@ -164,7 +164,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.1.6';
+var PAGE_VERSION = '1.1.8';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -184,7 +184,7 @@ function api(action,body,timeoutMs){
   // text/plain keeps this a "simple" request, so no CORS preflight is needed
   return fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow',signal:ctl?ctl.signal:undefined})
     .then(function(r){ clearTimeout(timer); if(!r.ok) throw new Error('net'); return r.json(); },function(e){ clearTimeout(timer);
-      if(e && e.name==='AbortError') throw new Error('That upload took too long. Check your connection and try again.'); throw e; })
+      if(e && e.name==='AbortError') throw new Error(action==='upload'?'That upload took too long. Check your connection and try again.':'The server took too long to answer.'); throw e; })
     .catch(function(e){ if(e&&e.message==='net'||e instanceof TypeError) throw new Error('We couldn\u2019t reach the server. Check your connection and try again \u2014 your answers are kept on this device.'); throw e; });
 }
 
@@ -197,7 +197,24 @@ function fatal(title,msg,icon){
 if(!token){ fatal('Link needed','Please open this page using the link in your application email.'); return; }
 if(/PASTE_YOUR/.test(API_URL)){ fatal('Not set up yet','The form isn\u2019t connected yet. Please contact us for help.','\uD83D\uDEE0'); return; }
 
-api('load').then(function(r){
+/* ---------- Loading ----------
+   Google can take a while to start the form service after a quiet spell, and occasionally the first
+   request stalls while a second one answers in a couple of seconds. So: wake the service straight away,
+   keep the applicant informed, and quietly retry a stalled request instead of making them refresh. */
+try{ fetch(API_URL,{method:'GET',redirect:'follow',cache:'no-store'}).catch(function(){}); }catch(e){}
+var loadMsgs=[[0,'Opening your application\u2026'],[4000,'Still loading \u2014 the first open can take a few seconds\u2026'],[11000,'Nearly there\u2026']];
+var loadTimers=loadMsgs.map(function(m){ return setTimeout(function(){ var el=$('#loadMsg'); if(el) el.textContent=m[1]; },m[0]); });
+$('#main').innerHTML='<div class="card center"><span class="spin"></span><p class="intro" id="loadMsg" style="margin:12px 0 0">Opening your application\u2026</p></div>';
+function loadForm(attempt){
+  var limits=[9000,15000,30000];
+  return api('load',{},limits[Math.min(attempt,limits.length-1)]).catch(function(e){
+    if(attempt<2){ return new Promise(function(res){ setTimeout(res,attempt?1500:300); }).then(function(){ return loadForm(attempt+1); }); }
+    throw new Error('We couldn\u2019t open your application just now. Please check your connection and tap Try again.');
+  });
+}
+function startLoad(){
+loadForm(0).then(function(r){
+  loadTimers.forEach(clearTimeout);
   if(!r.ok){ fatal(r.code==='expired'?'Link expired':'Link not valid', r.error||'Please contact us for a new link.'); return; }
   if(r.submitted){ done(r,true); return; }
   S.data=r; S.answers=r.answers||{}; S.uploads=r.uploads||{};
@@ -205,7 +222,10 @@ api('load').then(function(r){
   S.steps=[{id:'welcome',title:'Welcome'}].concat(r.form).concat([{id:'sign',title:'Agree and sign'},{id:'review',title:'Check and submit'}]);
   try{ var st=+sessionStorage.getItem(LS+'-step'); if(st>0&&st<S.steps.length) S.step=st; S.maxStep=Math.min(S.steps.length-1,+localStorage.getItem(LS+'-max')||0); }catch(e){}
   render();
-}).catch(function(e){ fatal('Can\u2019t load the form', e.message, '\uD83D\uDCF6'); });
+}).catch(function(e){ loadTimers.forEach(clearTimeout); fatal('Can\u2019t load the form', e.message, '\uD83D\uDCF6');
+  $('#main').querySelector('.card').insertAdjacentHTML('beforeend','<button class="btn primary" type="button" onclick="location.reload()">Try again</button>'); });
+}
+startLoad();
 
 /* ---------- Rules (mirrors the server) ---------- */
 function visible(f){ if(!f.if) return true; var v=String(S.answers[f.if[0]]||'').trim(); return f.if[1]==='*'? !!v : v===f.if[1]; }
@@ -444,12 +464,32 @@ function uploadFiles(key,files){
       prog('Uploading '+label+'\u2026');
       // allow plenty of time on slow mobile data, but never wait forever
       var limit=Math.max(60000, Math.round(b.size/1024)*120);
-      return toB64(b).then(function(d){ return api('upload',{item:key,name:f.name||'photo.jpg',mime:type,data:d},limit); }).then(function(r){
+      var uid='u'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+      return toB64(b).then(function(d){ return sendUpload(key,uid,{item:key,name:f.name||'photo.jpg',mime:type,data:d,uploadId:uid},limit,label,prog); }).then(function(r){
         if(r.ok){ S.uploads=r.uploads; delete S.errors[key]; } else msgs.push(r.error); next();
       });
     }).catch(function(e){ msgs.push(e.message||'Upload failed.'); next(); });
   }
   next();
+}
+/* Send one upload reliably. If the reply is lost or slow, check what the server actually received before
+   trying again (with the same uploadId, so the server never keeps a second copy). */
+function sendUpload(key,uid,body,limit,label,prog){
+  function arrived(){
+    return api('uploads',{},20000).then(function(r){ return r.ok && ((r.uploads||{})[key]||[]).some(function(f){ return f.uid===uid; }) ? r : null; }).catch(function(){ return null; });
+  }
+  function attempt(n){
+    return api('upload',body,limit).catch(function(err){
+      prog('Checking '+label+'\u2026');
+      return new Promise(function(res){ setTimeout(res,1500); }).then(arrived).then(function(r){
+        if(r) return {ok:true,uploads:r.uploads};             // it did arrive - the reply just got lost
+        if(n>=2) throw new Error((body.name||'That file')+' didn\u2019t upload. Check your connection and try again.');
+        prog('Retrying '+label+'\u2026');
+        return attempt(n+1);
+      });
+    });
+  }
+  return attempt(1);
 }
 window.addEventListener('beforeunload',function(e){ if(S.uploading>0){ e.preventDefault(); e.returnValue=''; } });
 

@@ -164,7 +164,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.2.1';
+var PAGE_VERSION = '1.2.2';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -247,6 +247,7 @@ function check(step){
     if(f.t==='date' && f.minAge){ var age=ageOn(v); if(age===null||age>120) errs[f.k]='Check this date'; else if(age<f.minAge) errs[f.k]='You must be '+f.minAge+' or older to apply'; }
   });
   if(step.rule==='licenceOrPassport' && !String(S.answers.LicenceNumber||'').trim() && !String(S.answers.PassportNumber||'').trim()) errs.LicenceNumber='Give your driver licence number or your passport number';
+  if(step.rule==='refereesIfNoRental') refereeProblems().forEach(function(p){ if(!errs[p.k]) errs[p.k]=p.m; });
   if(step.id==='sign'){
     S.data.consents.forEach(function(c){ if(S.consents[c.k]!==true) errs[c.k]='Please tick to agree'; });
     if(!S.signedName.trim()) errs.signedName='Type your full name';
@@ -255,6 +256,19 @@ function check(step){
   return errs;
 }
 
+/* Referees: anyone started needs a name and phone; with no current or previous rental, at least two are required (same rule as the server) */
+function refereeProblems(){
+  var A=S.answers, out=[], complete=0;
+  [1,2,3].forEach(function(n){ var nm=String(A['Referee'+n+'Name']||'').trim(), ph=String(A['Referee'+n+'Phone']||'').trim();
+    if(nm&&ph) complete++; else if(nm) out.push({k:'Referee'+n+'Phone',m:'Add a phone number for this referee'}); else if(ph) out.push({k:'Referee'+n+'Name',m:'Add this referee\u2019s name'}); });
+  if(A.CurrentlyRenting!=='Yes' && A.HadPreviousRental!=='Yes' && complete<2){
+    var msg='As you haven\u2019t given a current or previous rental, please give at least two referees';
+    [1,2,3].forEach(function(n){ var nm=String(A['Referee'+n+'Name']||'').trim(), ph=String(A['Referee'+n+'Phone']||'').trim();
+      if(!nm&&!ph&&out.length+complete<2) out.push({k:'Referee'+n+'Name',m:msg}); });
+    if(!out.length) out.push({k:'Referee1Name',m:msg});
+  }
+  return out;
+}
 /* Whole years from a yyyy-mm-dd birth date to today; null if it isn't a real date or is in the future */
 function ageOn(ymd){
   var m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd||'')); if(!m) return null;

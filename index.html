@@ -24,9 +24,6 @@ html,body{margin:0;background:var(--bg);color:var(--text);-webkit-text-size-adju
 body{padding-bottom:calc(96px + env(safe-area-inset-bottom,0px))}
 header{background:var(--grad);color:#fff;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 22px;border-radius:0 0 26px 26px}
 header .k{font-size:.8rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
-/* the landlord's logo (set up in Tenant Management), on a white tile so any logo reads on the colour */
-.hlogo{display:inline-block;background:#fff;border-radius:12px;padding:6px 10px;margin-bottom:10px;line-height:0}
-.hlogo img{max-height:84px;max-width:300px}
 header h1{margin:4px 0 2px;font-size:1.45rem;line-height:1.2}
 header .sub{opacity:.92;font-size:.95rem}
 .progress{height:6px;background:rgba(255,255,255,.3);border-radius:99px;margin-top:14px;overflow:hidden}
@@ -149,7 +146,6 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 </head>
 <body>
 <header><div class="hin">
-  <div id="hLogo" class="hlogo hidden"></div>
   <div class="k">Rental application</div>
   <h1 id="hTitle">Loading&#x2026;</h1>
   <div class="sub" id="hSub"></div>
@@ -168,7 +164,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.4.1';
+var PAGE_VERSION = '1.5.0';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -221,12 +217,10 @@ function loadForm(attempt){
     throw new Error('We couldn\u2019t open your application just now. Please check your connection and tap Try again.');
   });
 }
-function showLogo(b){ var el=$('#hLogo'); if(!el||!b||!b.logo) return; el.innerHTML='<img alt="'+esc(b.name||'')+'" src="'+esc(b.logo)+'">'; el.classList.remove('hidden'); }
 function startLoad(){
 loadForm(0).then(function(r){
   loadTimers.forEach(clearTimeout);
   if(!r.ok){ fatal(r.code==='expired'?'Link expired':r.code==='cancelled'?'Form cancelled':'Link not valid', r.error||'Please contact us for a new link.'); return; }
-  showLogo(r.brand);
   if(r.submitted){ done(r,true); return; }
   S.data=r; S.answers=r.answers||{}; S.uploads=r.uploads||{};
   try{ var local=JSON.parse(localStorage.getItem(LS)||'null'); if(local&&local.answers){ Object.keys(local.answers).forEach(function(k){ if(S.answers[k]===undefined||S.answers[k]==='') S.answers[k]=local.answers[k]; }); S.consents=local.consents||{}; S.signedName=local.signedName||''; } }catch(e){}

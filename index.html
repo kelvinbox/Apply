@@ -51,6 +51,8 @@ input:focus,textarea:focus{border-color:#14b8a6;box-shadow:0 0 0 4px rgba(20,184
 .locinfo,.locok,.locwarn{border-radius:12px;padding:10px 12px;font-size:.92rem;line-height:1.45}
 .locinfo{background:var(--brand-soft)} .locok{background:var(--brand-soft);font-weight:700} .locwarn{background:#fff7e6;color:#713f12;border:1px solid #f59e0b}
 .errcard{outline:2px solid var(--bad)}
+.minimap{border-radius:12px;overflow:hidden;border:1px solid var(--line);margin:4px 0 6px;line-height:0}
+.minimap iframe{width:100%;height:180px;border:0}
 .group{font-size:.82rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--brand);margin:6px 0 10px}
 .upl{border:2px dashed #7aa9a4;border-radius:14px;padding:12px;background:var(--surface-2)}
 .upl .file{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;font-size:.92rem}
@@ -167,7 +169,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.6.0';
+var PAGE_VERSION = '1.6.1';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -466,6 +468,12 @@ function answerText(f){
   if(f.t==='upload'){ var l=S.uploads[f.k]||[]; return l.length? l.map(function(x){ return x.name; }).join(', ') : ''; }
   var v=String(S.answers[f.k]||''); if(f.t==='date') return nzDate(v); if(f.t==='money'&&v) return money(v.replace(/[$,\s]/g,'')); return v;
 }
+function mapHtml(lat,lng,acc){
+  var d=0.004, q=lat.toFixed(5)+','+lng.toFixed(5);
+  var src='https://www.openstreetmap.org/export/embed.html?bbox='+[lng-d*1.6,lat-d,lng+d*1.6,lat+d].map(function(x){ return x.toFixed(5); }).join('%2C')+'&layer=mapnik&marker='+lat.toFixed(5)+'%2C'+lng.toFixed(5);
+  return '<div class="minimap"><iframe title="Map of where you are signing" loading="lazy" src="'+src+'"></iframe></div>'+
+    '<div class="hint">'+q+(acc!=null?' (within '+Math.round(acc)+' m)':'')+' &middot; <a href="https://maps.google.com/?q='+q+'" target="_blank" rel="noopener">Open in Google Maps</a></div>';
+}
 function reviewHtml(){
   var h='<div class="card"><h2>Check your answers</h2><p class="intro">Tap Edit to change anything, then submit.</p></div>';
   S.steps.forEach(function(st,i){
@@ -476,6 +484,9 @@ function reviewHtml(){
     h+='<div class="card rev"><h3>'+esc(st.title)+'<button type="button" data-edit="'+i+'">Edit</button></h3>'+(rows?'<dl>'+rows+'</dl>':'<div class="hint">Nothing entered</div>')+'</div>';
   });
   h+='<div class="card rev"><h3>Agree and sign<button type="button" data-edit="'+(S.steps.length-2)+'">Edit</button></h3><div class="hint">'+(S.sigDrawn?'\u2713 Signed by '+esc(S.signedName):'<span class="missing">Not signed yet</span>')+'</div></div>';
+  var L=S.loc||{};   // where they're signing: a small map when they shared it
+  h+='<div class="card rev"><h3>Where you\u2019re signing<button type="button" data-edit="'+(S.steps.length-2)+'">Edit</button></h3>'+
+    (L.status==='ok'? mapHtml(L.data.lat,L.data.lng,L.data.accuracy) : L.status==='declined'? '<div class="hint">Not shared. Your application will record that you chose not to share your location.</div>' : '<div class="hint missing">Not done yet</div>')+'</div>';
   if(S.submitError) h='<div class="banner">'+esc(S.submitError)+'</div>'+h;
   return h;
 }

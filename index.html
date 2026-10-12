@@ -48,6 +48,9 @@ input:focus,textarea:focus{border-color:#14b8a6;box-shadow:0 0 0 4px rgba(20,184
 .opts button.on{background:var(--grad);color:#fff;border-color:transparent}
 .err .opts button,.err input,.err textarea,.err .upl{border-color:var(--bad)}
 .emsg{color:var(--bad);font-size:.88rem;font-weight:600;margin-top:6px}
+.locinfo,.locok,.locwarn{border-radius:12px;padding:10px 12px;font-size:.92rem;line-height:1.45}
+.locinfo{background:var(--brand-soft)} .locok{background:var(--brand-soft);font-weight:700} .locwarn{background:#fff7e6;color:#713f12;border:1px solid #f59e0b}
+.errcard{outline:2px solid var(--bad)}
 .group{font-size:.82rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--brand);margin:6px 0 10px}
 .upl{border:2px dashed #7aa9a4;border-radius:14px;padding:12px;background:var(--surface-2)}
 .upl .file{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;font-size:.92rem}
@@ -164,7 +167,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.5.0';
+var PAGE_VERSION = '1.6.0';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -254,6 +257,8 @@ function check(step){
     S.data.consents.forEach(function(c){ if(S.consents[c.k]!==true) errs[c.k]='Please tick to agree'; });
     if(!S.signedName.trim()) errs.signedName='Type your full name';
     if(!S.sigDrawn) errs.signature='Please sign in the box';
+    var L=S.loc||{};
+    if(L.status!=='ok'&&L.status!=='declined') errs.location=L.status==='failed'? 'Turn on location and tap Try again, or choose Continue without sharing my location.' : 'Tap Share my location (your device will ask for permission).';
   }
   return errs;
 }
@@ -318,7 +323,7 @@ function render(){
   if(st.id==='review') foot+='<button class="btn primary" type="button" id="submitBtn" data-go="submit">Submit application</button>';
   else foot+='<button class="btn primary" type="button" data-go="next">'+(S.step===0?'Start':'Next')+'</button>';
   $('#footIn').innerHTML=foot; $('#foot').classList.remove('hidden'); navBusy();
-  if(st.id==='sign') initSig();
+  if(st.id==='sign'){ initSig(); initLoc(); }
   window.scrollTo(0,0);
 }
 function stepCard(st){ return '<div class="card"><h2>'+esc(st.title)+'</h2>'+(st.intro?'<p class="intro">'+esc(st.intro)+'</p>':'')+'<div class="fields">'+fieldsHtml(st.fields)+'</div></div>'; }
@@ -375,7 +380,87 @@ function signHtml(){
     '<div class="card"><h2>Sign</h2><div class="fld'+(e.signedName?' err':'')+'"><label for="signedName">Type your full name</label><input type="text" id="signedName" autocomplete="name" autocapitalize="words" value="'+esc(S.signedName)+'">'+(e.signedName?'<div class="emsg">'+esc(e.signedName)+'</div>':'')+'</div>'+
     '<div class="fld'+(e.signature?' err':'')+'"><div class="lbl">Sign with your finger or mouse</div><div class="sigwrap"><canvas id="sig"></canvas><div class="line"></div><div class="ph" id="sigPh">Sign here</div></div>'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span class="hint">Signed '+esc(new Date().toLocaleDateString('en-NZ',{day:'numeric',month:'long',year:'numeric'}))+'</span><button class="btn" type="button" id="sigClear" style="min-height:40px">Clear</button></div>'+
-    (e.signature?'<div class="emsg">'+esc(e.signature)+'</div>':'')+'</div></div>';
+    (e.signature?'<div class="emsg">'+esc(e.signature)+'</div>':'')+'</div></div>'+locHtml();
+}
+/* ---------- Where you're signing: asked before submitting, recorded with the application as evidence ---------- */
+/* S.loc: { status: 'ok' | 'declined' | 'failed' | '', data: {lat,lng,accuracy,at}, reason, code, attempts: [reasons] } */
+function device(){
+  var ua=navigator.userAgent||'', ios=/iPhone|iPad|iPod/.test(ua)||(/Macintosh/.test(ua)&&navigator.maxTouchPoints>1), android=/Android/.test(ua);
+  var inApp=/FBAN|FBAV|Instagram|Line\/|GSA\/|LinkedInApp|Snapchat|Twitter/.test(ua);
+  var browser=/CriOS/.test(ua)?'Chrome':/FxiOS/.test(ua)?'Firefox':/EdgiOS|EdgA|Edg\//.test(ua)?'Edge':/SamsungBrowser/.test(ua)?'Samsung Internet':/Firefox\//.test(ua)?'Firefox':/Chrome\//.test(ua)?'Chrome':/Safari\//.test(ua)?'Safari':'your browser';
+  return { ios:ios, android:android, inApp:inApp, browser:browser, mac:!ios&&/Macintosh/.test(ua), windows:/Windows/.test(ua),
+    name: ios?(/iPad/.test(ua)?'iPad':'iPhone'):android?'Android phone':/Macintosh/.test(ua)?'Mac':/Windows/.test(ua)?'Windows computer':'device' };
+}
+function promptHint(d){
+  if(d.inApp) return 'It looks like this link opened inside another app, which usually can\u2019t share a location. Tap the <b>&middot;&middot;&middot;</b> or share button and choose <b>Open in '+(d.ios?'Safari':'Chrome')+'</b> (or your browser) first.';
+  if(d.ios) return 'A box will pop up asking to use your current location. Tap <b>Allow</b> (or <b>Allow While Using App</b>).';
+  if(d.android) return 'A box will pop up asking to use your device\u2019s location. Tap <b>Allow</b> (or <b>While using the site</b>).';
+  return 'Your browser will ask to know your location, usually near the address bar. Choose <b>Allow</b>.';
+}
+function fixSteps(d,code){
+  var b=d.browser, s=[];
+  if(code==='unsupported') return ['This browser can\u2019t share a location. Open your application link on your phone instead (in Safari on an iPhone, or Chrome on Android).'];
+  if(code===3) return ['Your device took too long to find where you are. Turn on Wi-Fi (it helps even if you\u2019re not connected), move near a window, then tap <b>Try again</b>.'];
+  if(d.ios&&d.inApp) return ['You opened the link inside another app, which can\u2019t share your location.','Tap the <b>&middot;&middot;&middot;</b> or share button and choose <b>Open in Safari</b> (or copy the link into Safari), then carry on there. Your answers are saved.'];
+  if(d.ios){
+    s.push('Open the <b>Settings</b> app.','Tap <b>Privacy &amp; Security</b>, then <b>Location Services</b>, and make sure <b>Location Services</b> is on.');
+    if(b==='Safari') s.push('Scroll down, tap <b>Safari Websites</b>, and choose <b>While Using the App</b> (or <b>Ask Next Time</b>).','If you tapped <b>Don\u2019t Allow</b> before: back in Safari, tap the <b>aA</b> (or page menu) button in the address bar, then <b>Website Settings</b>, and set <b>Location</b> to <b>Allow</b> or <b>Ask</b>.');
+    else s.push('Scroll down, tap <b>'+b+'</b>, and choose <b>While Using the App</b> (or <b>Ask Next Time</b>).');
+    s.push('Come back to this page and tap <b>Try again</b>. If it still doesn\u2019t ask, reload the page (your answers are saved).'); return s;
+  }
+  if(d.android){
+    if(code===2) s.push('Swipe down from the top of the screen and turn on <b>Location</b>.');
+    if(b==='Samsung Internet') s.push('Tap the icon to the left of the web address (a padlock or sliders), then <b>Permissions</b>, and allow <b>Location</b>.','If that isn\u2019t there: open <b>Settings</b> &gt; <b>Apps</b> &gt; <b>Samsung Internet</b> &gt; <b>Permissions</b> &gt; <b>Location</b> &gt; <b>Allow only while using the app</b>.');
+    else s.push('Tap the icon to the left of the web address (a padlock or sliders), then <b>Permissions</b> (or <b>Site settings</b>), and set <b>Location</b> to <b>Allow</b>.','If '+b+' itself isn\u2019t allowed: open <b>Settings</b> &gt; <b>Apps</b> &gt; <b>'+b+'</b> &gt; <b>Permissions</b> &gt; <b>Location</b> &gt; <b>Allow only while using the app</b>.');
+    s.push('Come back and tap <b>Try again</b>.'); return s;
+  }
+  if(b==='Safari'&&d.mac) s.push('In the menu bar choose <b>Safari</b> &gt; <b>Settings</b> &gt; <b>Websites</b> &gt; <b>Location</b>, and set this site to <b>Allow</b>.');
+  else if(b==='Firefox') s.push('Click the icon to the left of the web address, and remove the <b>Blocked</b> location permission (or set it to <b>Allow</b>).');
+  else s.push('Click the icon to the left of the web address (a padlock or sliders), then <b>Site settings</b> or <b>Permissions</b>, and set <b>Location</b> to <b>Allow</b>.');
+  if(d.mac) s.push('Also check <b>System Settings</b> &gt; <b>Privacy &amp; Security</b> &gt; <b>Location Services</b> is on, and turned on for '+b+'.');
+  if(d.windows) s.push('Also check Windows <b>Settings</b> &gt; <b>Privacy &amp; security</b> &gt; <b>Location</b>: <b>Location services</b> and <b>Let apps access your location</b> are on.');
+  s.push('Reload this page (your answers are saved) and tap <b>Try again</b>.'); return s;
+}
+var LOC_REASON={1:'permission denied',2:'position unavailable',3:'timed out',unsupported:'not supported by this browser'};
+function locHtml(){
+  var L=S.loc=S.loc||{status:'',attempts:[]}, d=device(), e=S.errors, h='<div class="card'+(e.location?' errcard':'')+'" id="locCard"><h2>\ud83d\udccd Where you\u2019re signing</h2>'+
+    '<p class="intro">As part of signing, we record the location of the device you sign on, with the time, your device and its internet address. It\u2019s kept with your application as evidence of where and how it was signed.</p>';
+  if(L.status==='ok') h+='<div class="locok">\u2713 Location shared: '+esc(L.data.lat.toFixed(5)+', '+L.data.lng.toFixed(5))+' (within '+Math.round(L.data.accuracy)+' m)</div>';
+  else if(L.status==='declined') h+='<div class="locwarn"><b>You chose to sign without sharing your location.</b> That will be recorded with your application.</div>'+
+    '<button class="btn" type="button" id="locShare" style="margin-top:10px">\ud83d\udccd Share my location after all</button>';
+  else {
+    h+='<div class="locinfo"><b>Heads up:</b> when you tap <b>Share my location</b>, your '+esc(d.name)+' will ask for permission. '+promptHint(d)+'</div>'+
+      '<button class="btn primary" type="button" id="locShare" style="margin-top:10px">\ud83d\udccd '+(L.status==='failed'?'Try again':'Share my location')+'</button>';
+    if(L.status==='failed'){
+      h+='<div class="emsg" style="margin-top:12px">'+esc(L.code===1?'Location access is turned off for this page.':L.code===2?'Your device couldn\u2019t work out where you are.':L.code===3?'Finding your location took too long.':'Location isn\u2019t available here.')+
+        ' To turn it on for your '+esc(d.name)+(d.browser!=='your browser'?' ('+esc(d.browser)+')':'')+':</div><ol class="hint" style="padding-left:20px;line-height:1.5">'+fixSteps(d,L.code).map(function(x){ return '<li>'+x+'</li>'; }).join('')+'</ol>'+
+        '<div class="locwarn" style="margin-top:10px"><b>Can\u2019t or don\u2019t want to share it?</b> You can still sign. Your application will record that you were asked and chose not to share your location.'+
+        '<div style="margin-top:8px"><button class="btn" type="button" id="locSkip">Continue without sharing my location</button></div></div>';
+    }
+  }
+  if(e.location) h+='<div class="emsg">'+esc(e.location)+'</div>';
+  return h+'</div>';
+}
+function initLoc(){
+  var sh=$('#locShare'), sk=$('#locSkip');
+  if(sk) sk.addEventListener('click',function(){ S.loc.status='declined'; S.loc.reason=LOC_REASON[S.loc.code]||'not shared'; delete S.errors.location; reLoc(); });
+  if(!sh) return;
+  sh.addEventListener('click',function(){
+    function fail(code){ S.loc.status='failed'; S.loc.code=code; S.loc.attempts.push((LOC_REASON[code]||'failed')+' at '+new Date().toISOString()); reLoc(); }
+    if(!navigator.geolocation) return fail('unsupported');
+    sh.disabled=true; sh.textContent='Waiting for your device\u2026';
+    navigator.geolocation.getCurrentPosition(function(p){
+      S.loc.status='ok'; S.loc.data={lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy,at:new Date(p.timestamp||Date.now()).toISOString()}; delete S.loc.reason; delete S.errors.location; reLoc();
+    },function(err){ fail(err&&err.code); },{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+  });
+}
+function reLoc(){ var c=$('#locCard'); if(!c) return; c.outerHTML=locHtml(); initLoc(); }
+/* The device and network details sent with the application (the IP address is reported by api.ipify.org, so it's "as reported") */
+function clientInfo(){
+  var info={ua:navigator.userAgent,tz:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),lang:navigator.language||'',screen:(screen.width||'')+'x'+(screen.height||''),platform:navigator.platform||''};
+  var ctl=window.AbortController?new AbortController():null, t=setTimeout(function(){ if(ctl) ctl.abort(); },3000);
+  return fetch('https://api.ipify.org?format=json',ctl?{signal:ctl.signal}:{}).then(function(r){ return r.json(); }).then(function(j){ clearTimeout(t); if(j&&j.ip) info.ip=j.ip; return info; })
+    .catch(function(){ clearTimeout(t); return info; });
 }
 function answerText(f){
   if(f.t==='upload'){ var l=S.uploads[f.k]||[]; return l.length? l.map(function(x){ return x.name; }).join(', ') : ''; }
@@ -629,13 +714,15 @@ function submit(btn){
   // find the first step with a problem
   for(var i=0;i<S.steps.length;i++){ var errs=S.steps[i].fields||S.steps[i].id==='sign'? check(S.steps[i]) : {}; if(Object.keys(errs).length){ S.errors=errs; S.step=i; render(); var f=document.querySelector('.err'); if(f) f.scrollIntoView({block:'center'}); return; } }
   btn.disabled=true; btn.innerHTML='<span class="spin" style="width:20px;height:20px;border-color:rgba(255,255,255,.4);border-top-color:#fff"></span> Submitting\u2026';
-  flattenSig(S.sigImage).then(function(sig){
-    return api('submit',{answers:S.answers,consents:S.consents,signedName:S.signedName,signature:sig,userAgent:navigator.userAgent,tz:(Intl.DateTimeFormat().resolvedOptions().timeZone||'')});
+  var L=S.loc||{};
+  Promise.all([flattenSig(S.sigImage),clientInfo()]).then(function(x){
+    return api('submit',{answers:S.answers,consents:S.consents,signedName:S.signedName,signature:x[0],userAgent:navigator.userAgent,tz:(Intl.DateTimeFormat().resolvedOptions().timeZone||''),
+      client:x[1],location:L.status==='ok'?L.data:null,locationDeclined:L.status==='declined'?(L.reason||'not shared'):'',locationAttempts:L.attempts||[]});
   }).then(function(r){
     if(r.ok){ try{ localStorage.removeItem(LS); sessionStorage.removeItem(LS+'-step'); }catch(e){} done(r,false); return; }
     if(r.problems&&r.problems.length){
       var keys={}; r.problems.forEach(function(p){ keys[p.k]=p.m; });
-      for(var i=0;i<S.steps.length;i++){ var st=S.steps[i]; var hit=(st.fields||[]).some(function(f){ return keys[f.k]; }) || (st.id==='sign'&&(keys.signature||keys.signedName||S.data.consents.some(function(c){ return keys[c.k]; })));
+      for(var i=0;i<S.steps.length;i++){ var st=S.steps[i]; var hit=(st.fields||[]).some(function(f){ return keys[f.k]; }) || (st.id==='sign'&&(keys.signature||keys.signedName||keys.location||S.data.consents.some(function(c){ return keys[c.k]; })));
         if(hit){ S.errors=keys; S.step=i; render(); return; } }
     }
     S.submitError=r.error||'Your application could not be submitted.'; render();

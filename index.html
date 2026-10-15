@@ -37,6 +37,7 @@ h2{font-size:1.25rem;margin:2px 0 6px}
 .fld>label,.fld>.lbl{display:block;font-weight:650;margin-bottom:7px;line-height:1.35}
 .req{color:var(--brand);margin-left:2px}
 .hint{font-size:.85rem;color:var(--muted);margin-top:5px}
+button.linkbtn{background:none;border:0;padding:0;font:inherit;font-weight:700;color:inherit;text-decoration:underline;cursor:pointer}
 input[type=text],input[type=email],input[type=tel],input[type=date],input[type=number],textarea{
   width:100%;font:inherit;font-size:17px;color:var(--text);background:var(--surface-2);border:2px solid var(--line);border-radius:14px;padding:12px 14px;min-height:52px;outline:0;-webkit-appearance:none;appearance:none}
 textarea{min-height:96px;resize:vertical}
@@ -169,7 +170,7 @@ html,body,button,a,label,input,textarea,select,.opts,.check,.upl{touch-action:ma
 'use strict';
 /* ====== Settings: paste your Tenant Apply API web app URL here ====== */
 var API_URL = 'https://script.google.com/macros/s/AKfycbzu3Up6HPkOgEbsmIboWfyLBwUDCwomTMO7gVC4qsjs07mI_mI8dbtv98u0XiMoLODK8w/exec';
-var PAGE_VERSION = '1.6.1';
+var PAGE_VERSION = '1.7.0';
 
 var MAX_BYTES = 8*1024*1024, MAX_EDGE = 2000;
 var $ = function(s,r){ return (r||document).querySelector(s); };
@@ -237,6 +238,42 @@ loadForm(0).then(function(r){
 }
 startLoad();
 
+/* ---------- Email addresses (the same checks as Tenant Management; keep them in step) ---------- */
+function cleanEmail(v){ return String(v==null?'':v).replace(/[\u200B-\u200D\u2060\uFEFF\u00A0]/g,'').replace(/^\s*mailto:/i,'').trim(); }
+function emailProblem(v){
+  v=cleanEmail(v); if(!v) return '';
+  if(/\s/.test(v)) return 'has a space in it';
+  var at=v.split('@'); if(at.length<2) return 'is missing the @'; if(at.length>2) return 'has more than one @';
+  var local=at[0], domain=at[1];
+  if(!local) return 'is missing the part before the @';
+  if(!domain) return 'is missing the part after the @';
+  if(/^\.|\.$/.test(local)||/\.\./.test(local)) return 'has a dot in the wrong place before the @';
+  if(!/^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]+$/.test(local)) return 'has a character email addresses can\u2019t contain';
+  if(!/\./.test(domain)) return 'is missing the ending (e.g. .com or .co.nz)';
+  if(/^\.|\.$/.test(domain)||/\.\./.test(domain)) return 'has a dot in the wrong place after the @';
+  var labels=domain.split('.');
+  if(!labels.every(function(l){ return /^[A-Za-z0-9-]+$/.test(l) && !/^-|-$/.test(l); })) return 'has a character email addresses can\u2019t contain';
+  if(!/^[A-Za-z]{2,}$/.test(labels[labels.length-1])) return 'doesn\u2019t end properly (e.g. .com or .co.nz)';
+  if(v.length>254) return 'is too long';
+  return '';
+}
+var EMAIL_DOMAINS=['gmail.com','googlemail.com','mail.com','email.com','ymail.com','aol.com','gmx.com','zoho.com','fastmail.com','hey.com','hotmail.com.au','outlook.com.au','live.com.au','bigpond.com','optusnet.com.au','xnet.co.nz','snap.net.nz','ihug.co.nz','kinect.co.nz','hotmail.com','outlook.com','yahoo.com','icloud.com','live.com','me.com','xtra.co.nz','hotmail.co.nz','yahoo.co.nz','outlook.co.nz','live.co.nz','windowslive.com','msn.com','protonmail.com','proton.me','orcon.net.nz','vodafone.co.nz','slingshot.co.nz','actrix.co.nz','clear.net.nz','paradise.net.nz','inspire.net.nz'];
+function emailSuggest(v){
+  v=cleanEmail(v); if(emailProblem(v)&&!/end properly|missing the ending/.test(emailProblem(v))) return '';
+  var at=v.lastIndexOf('@'); if(at<1) return '';
+  var local=v.slice(0,at), domain=v.slice(at+1).toLowerCase();
+  if(EMAIL_DOMAINS.indexOf(domain)>=0) return '';
+  var fixed=domain.replace(/\.con$|\.cmo$|\.ocm$|\.vom$|\.xom$|\.comm$|\.cim$/,'.com').replace(/\.conz$|\.co\.n$|\.co\.nzz$|\.co\.mz$|\.co\.bz$|\.cp\.nz$|\.co\.za$/,'.co.nz');
+  if(fixed==='gmail.co.nz'||fixed==='gmail.co') fixed='gmail.com';
+  if(EMAIL_DOMAINS.indexOf(fixed)>=0 && fixed!==domain) return local+'@'+fixed;
+  // one or two letters off a common provider (gmial.com, hotmial.com, outlok.com)
+  function dist(a,b){ var d=[],i,j; for(i=0;i<=a.length;i++){ d[i]=[i]; } for(j=0;j<=b.length;j++) d[0][j]=j;
+    for(i=1;i<=a.length;i++) for(j=1;j<=b.length;j++){ d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+      if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1]) d[i][j]=Math.min(d[i][j],d[i-2][j-2]+1); }
+    return d[a.length][b.length]; }
+  var best='',bd=3; EMAIL_DOMAINS.forEach(function(c){ var n=dist(fixed,c); if(n<bd && n<=(c.length>9?2:1)){ bd=n; best=c; } });
+  return best? local+'@'+best : '';
+}
 /* ---------- Rules (mirrors the server) ---------- */
 function visible(f){ if(!f.if) return true; var v=String(S.answers[f.if[0]]||'').trim(); return f.if[1]==='*'? !!v : v===f.if[1]; }
 function check(step){
@@ -246,7 +283,7 @@ function check(step){
     var v=f.t==='upload'? (S.uploads[f.k]||[]).length : String(S.answers[f.k]||'').trim();
     if(f.req && !v){ errs[f.k]= f.t==='upload'?'Please add a photo or file':(f.t==='yesno'||f.t==='choice')?'Please choose one':'This is required'; return; }
     if(!v||f.t==='upload') return;
-    if(f.t==='email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) errs[f.k]='Check this email address';
+    if(f.t==='email'){ var ep=emailProblem(v); if(ep) errs[f.k]='This email address '+ep+'.'; }
     if(f.t==='tel' && v.replace(/\D/g,'').length<7) errs[f.k]='Check this phone number';
     if((f.t==='money'||f.t==='number') && !isFinite(Number(v.replace(/[$,\s]/g,'')))) errs[f.k]='Enter a number';
     if(f.t==='date' && f.minAge){ var age=ageOn(v); if(age===null||age>120) errs[f.k]='Check this date'; else if(age<f.minAge) errs[f.k]='You must be '+f.minAge+' or older to apply'; }
@@ -673,6 +710,20 @@ document.addEventListener('change',function(e){
   if(t.dataset&&t.dataset.up){ var files=[].slice.call(t.files||[]); t.value=''; if(files.length) uploadFiles(t.dataset.up,files); }
   if(t.dataset&&t.dataset.consent){ S.consents[t.dataset.consent]=t.checked; t.closest('.check').classList.toggle('on',t.checked); t.closest('.check').classList.remove('err'); keepLocal(); }
 });
+/* ---------- Email boxes: tidied and checked when the applicant leaves them, with a suggested fix for a misspelt provider ---------- */
+function emailCheckBox(t){
+  var k=t.dataset.k, fld=t.closest('.fld'); if(!k||!fld) return;
+  var c=cleanEmail(t.value); if(c!==t.value){ t.value=c; S.answers[k]=c; t.dispatchEvent(new Event('input',{bubbles:true})); }
+  var p=emailProblem(c), s=(!p||/end properly|missing the ending/.test(p))? emailSuggest(c) : '';
+  var old=fld.querySelector('.emhint'); if(old) old.remove();
+  if(p){ S.errors[k]='This email address '+p+'.'; fld.classList.add('err'); var m=fld.querySelector('.emsg'); if(!m){ m=document.createElement('div'); m.className='emsg'; fld.appendChild(m); } m.textContent=S.errors[k]; t.setAttribute('aria-invalid','true'); }
+  if(s){ var h=document.createElement('div'); h.className='hint emhint'; h.setAttribute('role','status'); h.innerHTML='Did you mean <button type="button" class="linkbtn" data-em-fix="'+esc(s)+'">'+esc(s)+'</button>?'; fld.appendChild(h); }
+}
+document.addEventListener('focusout',function(e){ var t=e.target; if(t&&t.type==='email'&&t.dataset&&t.dataset.k) emailCheckBox(t); });
+document.addEventListener('input',function(e){ var t=e.target; if(t&&t.type==='email'){ t.removeAttribute('aria-invalid'); var h=t.closest('.fld')&&t.closest('.fld').querySelector('.emhint'); if(h) h.remove(); } });
+document.addEventListener('click',function(e){ var b=e.target.closest&&e.target.closest('[data-em-fix]'); if(!b) return;
+  var t=b.closest('.fld').querySelector('input[type=email]'); if(!t) return;
+  e.preventDefault(); t.value=b.getAttribute('data-em-fix'); t.dispatchEvent(new Event('input',{bubbles:true})); emailCheckBox(t); });
 /* ---------- On-screen keyboard ----------
    Mobile browsers lift fixed bars above the keyboard, where they cover the field being typed in.
    Hide the Back / Next bar while a text box has focus, and bring it back as soon as it doesn't. */
